@@ -427,6 +427,8 @@ export function Dashboard() {
           </div>
         </div>
       )}
+
+      <Footer />
     </div>
   );
 }

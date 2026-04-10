@@ -3,7 +3,7 @@ import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { Dashboard } from './pages/Dashboard';
 import { Categories } from './pages/Categories'; // <-- Importamos aqui
-
+import Footer from '../components/Footer';
 function App() {
   return (
     <BrowserRouter>

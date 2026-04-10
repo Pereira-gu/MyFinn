@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { api } from '../services/api';
-
+import Footer from '../components/Footer';
 export function Register() {
   // Estados para guardar os dados que o usuário digita
   const [name, setName] = useState('');
@@ -111,6 +111,7 @@ export function Register() {
           </Link>
         </p>
       </div>
+      <Footer />
     </div>
   );
 }

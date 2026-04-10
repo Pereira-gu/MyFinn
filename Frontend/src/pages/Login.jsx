@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { api } from '../services/api';
+import Footer from '../components/Footer';
 
 export function Login() {
   const [email, setEmail] = useState('');
@@ -101,6 +102,7 @@ export function Login() {
           </Link>
         </p>
       </div>
+      <Footer />
     </div>
   );
 }
