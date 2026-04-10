@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Criamos o nosso carteiro apontando para a porta do nosso Spring Boot
 export const api = axios.create({
-    baseURL: 'http://localhost:8080',
+    baseURL: 'https://myfinn.onrender.com',
 });
 
 // O "Carimbador Automático" de Tokens
