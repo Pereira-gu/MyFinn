@@ -1,0 +1,8 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Se quiser, pode colocar uma cor de fundo global para o app aqui */
+body {
+  background-color: #F3F4F6; /* Um cinza muito clarinho, ótimo para apps financeiros */
+}
