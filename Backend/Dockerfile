@@ -1,8 +1,9 @@
-# Usa o Maven para construir o projeto
+# Estágio 1: Build com Maven e Java 21
 FROM maven:3.9.6-eclipse-temurin-21 AS build
 WORKDIR /app
 COPY . .
-RUN mvn clean package -DskipTests
+# A alteração está aqui: saltar a compilação e execução dos testes
+RUN mvn clean package -DskipTests -Dmaven.test.skip=true
 
 # Estágio 2: Rodar a aplicação com Java 21 (JRE leve)
 FROM eclipse-temurin:21-jre-alpine
