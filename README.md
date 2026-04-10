@@ -1,6 +1,6 @@
 # 💸 MyFinn - Gestor Financeiro Pessoal
 
-![MyFinn Preview](link-para-a-tua-imagem-aqui.jpg)
+![MyFinn Preview](img/preview.png)
 
 O **MyFinn** é uma aplicação Full-Stack de gestão financeira pessoal desenhada para ser rápida, visual e inteligente. Chega de planilhas complexas: controle os seus gastos com gráficos interativos, automação de despesas fixas e gestão de parcelas de cartão de crédito.
 
