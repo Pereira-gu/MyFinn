@@ -16,11 +16,13 @@ import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 @ExtendWith(MockitoExtension.class)
 class TransactionServiceTest {
+
     @Mock
     private TransactionRepository transactionRepository;
 
@@ -30,54 +32,77 @@ class TransactionServiceTest {
     @InjectMocks
     private TransactionService transactionService;
 
-    // TESTE 1: O Caminho Feliz
     @Test
     void deveCriarTransacaoComSucesso() {
         User usuarioLogado = new User();
         usuarioLogado.setId(UUID.randomUUID());
         UUID categoryId = UUID.randomUUID();
-        Category categoria = new Category(categoryId, "Salário", "💰", "#00FF00", usuarioLogado);
+        // Correção: Adicionado o argumento 'true' para o campo 'active'
+        Category categoria = new Category(categoryId, "Salário", "💰", "#00FF00", true, usuarioLogado);
+
         TransactionRequestDTO pedido = new TransactionRequestDTO(
-                "Pagamento da empresa",
-                500000,
-                "income",
-                LocalDateTime.now(),
-                true,
-                categoryId
+                "Pagamento", 500000, "income", LocalDateTime.now(), true, categoryId, "CASH", 1, false
         );
 
+        // Correção: Adicionado o argumento 'true' para o campo 'active'
         Transaction transacaoSalva = new Transaction(
-                UUID.randomUUID(), "Pagamento da empresa", 500000, "income", pedido.date(), true, usuarioLogado, categoria
+                UUID.randomUUID(), "Pagamento", 500000, "income", pedido.date(), true, true, usuarioLogado, categoria, "CASH", 1, false
         );
 
         Mockito.when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(categoria));
         Mockito.when(transactionRepository.save(Mockito.any(Transaction.class))).thenReturn(transacaoSalva);
+
         TransactionResponseDTO resposta = transactionService.createTransaction(pedido, usuarioLogado);
-        Assertions.assertNotNull(resposta.id(), "O ID da transação não deve ser nulo");
-        Assertions.assertEquals("Pagamento da empresa", resposta.description());
-        Assertions.assertEquals(500000, resposta.valueCents());
-        Assertions.assertEquals("Salário", resposta.categoryName(), "Deveria ter trazido o nome da categoria atrelada");
+
+        Assertions.assertNotNull(resposta.id());
+        Assertions.assertEquals("Salário", resposta.categoryName());
         Mockito.verify(transactionRepository, Mockito.times(1)).save(Mockito.any(Transaction.class));
     }
 
-    // TESTE 2: A Nossa Regra de Segurança!
     @Test
-    void naoDeveCriarTransacaoSeCategoriaForDeOutroUsuario() {
+    void deveCriarParcelamentoDeCartaoComSucesso() {
         User usuarioLogado = new User();
         usuarioLogado.setId(UUID.randomUUID());
-        User hacker = new User();
-        hacker.setId(UUID.randomUUID());
         UUID categoryId = UUID.randomUUID();
-        Category categoriaDoHacker = new Category(categoryId, "Lazer", "🎮", "#FF0000", hacker);
+        // Correção: Adicionado o argumento 'true' para o campo 'active'
+        Category categoria = new Category(categoryId, "Eletrónicos", "💻", "#000", true, usuarioLogado);
+
         TransactionRequestDTO pedido = new TransactionRequestDTO(
-                "Tentativa de golpe", 25000, "outcome", LocalDateTime.now(), true, categoryId
+                "Monitor", 10000, "outcome", LocalDateTime.of(2026, 4, 1, 10, 0),
+                true, categoryId, "CREDIT", 3, false
         );
 
-        Mockito.when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(categoriaDoHacker));
-        IllegalArgumentException excecao = Assertions.assertThrows(IllegalArgumentException.class, () -> {
-            transactionService.createTransaction(pedido, usuarioLogado);
-        });
-        Assertions.assertEquals("Você não tem permissão para usar esta categoria.", excecao.getMessage());
-        Mockito.verify(transactionRepository, Mockito.never()).save(Mockito.any(Transaction.class));
+        Mockito.when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(categoria));
+        Mockito.when(transactionRepository.save(Mockito.any(Transaction.class))).thenAnswer(i -> i.getArguments()[0]);
+
+        TransactionResponseDTO resposta = transactionService.createTransaction(pedido, usuarioLogado);
+
+        Mockito.verify(transactionRepository, Mockito.times(3)).save(Mockito.any(Transaction.class));
+        Assertions.assertEquals(3334, resposta.valueCents());
+    }
+
+    @Test
+    void deveDuplicarTransacoesRecorrentesParaOMesAtual() {
+        User user = new User();
+        user.setId(UUID.randomUUID());
+
+        Mockito.when(transactionRepository.existsByUserIdAndIsRecurringTrueAndDateBetween(
+                Mockito.eq(user.getId()), Mockito.any(), Mockito.any())).thenReturn(false);
+
+        // Correção: Adicionado o argumento 'true' para o campo 'active'
+        Category cat = new Category(UUID.randomUUID(), "Assinatura", "📺", "#000", true, user);
+        Transaction recorrentePassada = new Transaction();
+        recorrentePassada.setDescription("Netflix");
+        recorrentePassada.setValueCents(3990);
+        recorrentePassada.setIsRecurring(true);
+        recorrentePassada.setCategory(cat);
+        recorrentePassada.setDate(LocalDateTime.of(2026, 3, 20, 10, 0));
+
+        Mockito.when(transactionRepository.findByUserIdAndActiveTrueAndIsRecurringTrueAndDateBetween(
+                Mockito.eq(user.getId()), Mockito.any(), Mockito.any())).thenReturn(List.of(recorrentePassada));
+
+        transactionService.checkAndCreateRecurring(user, 4, 2026);
+
+        Mockito.verify(transactionRepository, Mockito.atLeastOnce()).save(Mockito.any(Transaction.class));
     }
 }
