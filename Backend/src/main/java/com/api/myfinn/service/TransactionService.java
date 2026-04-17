@@ -13,9 +13,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
-
-import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -31,21 +30,54 @@ public class TransactionService {
     // ==========================================
     // BUSCAR DADOS DO DASHBOARD
     // ==========================================
-    public DashboardResponseDTO getDashboardData(User loggedUser, int month, int year, int page, int size) {
-        YearMonth yearMonth = YearMonth.of(year, month);
-        LocalDateTime startDate = yearMonth.atDay(1).atStartOfDay();
-        LocalDateTime endDate = yearMonth.atEndOfMonth().atTime(23, 59, 59);
+    public DashboardResponseDTO getDashboard(int month, int year, int page, int size, User loggedUser) {
+        UUID userId = loggedUser.getId();
 
-        List<Transaction> allMonthTransactions = transactionRepository.findByUserIdAndActiveTrueAndDateBetween(loggedUser.getId(), startDate, endDate);
-        int income = allMonthTransactions.stream().filter(t -> t.getType().equals("income")).mapToInt(Transaction::getValueCents).sum();
-        int outcome = allMonthTransactions.stream().filter(t -> t.getType().equals("outcome")).mapToInt(Transaction::getValueCents).sum();
-        int balance = income - outcome;
+        // 1. Cálculos exatos das datas (Início e Fim do Mês Atual)
+        YearMonth currentYearMonth = YearMonth.of(year, month);
+        LocalDateTime currentStart = currentYearMonth.atDay(1).atStartOfDay(); // Dia 1, 00:00:00
+        LocalDateTime currentEnd = currentYearMonth.atEndOfMonth().atTime(23, 59, 59); // Último dia, 23:59:59
 
+        // 2. Cálculos exatos das datas (Início e Fim do Mês Anterior)
+        YearMonth prevYearMonth = currentYearMonth.minusMonths(1);
+        LocalDateTime prevStart = prevYearMonth.atDay(1).atStartOfDay();
+        LocalDateTime prevEnd = prevYearMonth.atEndOfMonth().atTime(23, 59, 59);
+
+        // 3. Consultas otimizadas do Mês Atual (A query retorna Long, nós convertemos para intValue)
+        Integer currentIncome = transactionRepository
+                .sumTransactionsByTypeAndDateBetween(userId, "income", currentStart, currentEnd)
+                .intValue();
+
+        Integer currentOutcome = transactionRepository
+                .sumTransactionsByTypeAndDateBetween(userId, "outcome", currentStart, currentEnd)
+                .intValue();
+
+        Integer currentBalance = currentIncome - currentOutcome;
+
+        // 4. Consultas otimizadas do Mês Anterior
+        Integer prevIncome = transactionRepository
+                .sumTransactionsByTypeAndDateBetween(userId, "income", prevStart, prevEnd)
+                .intValue();
+
+        Integer prevOutcome = transactionRepository
+                .sumTransactionsByTypeAndDateBetween(userId, "outcome", prevStart, prevEnd)
+                .intValue();
+
+        // 5. Busca as transações do mês atual com paginação
         Pageable pageable = PageRequest.of(page, size);
-        Page<Transaction> pagedTransactions = transactionRepository.findByUserIdAndActiveTrueAndDateBetweenOrderByDateDesc(loggedUser.getId(), startDate, endDate, pageable);
-        Page<TransactionResponseDTO> transactionsPage = pagedTransactions.map(this::convertToResponseDTO);
+        Page<TransactionResponseDTO> transactionsPage = transactionRepository
+                .findByUserIdAndActiveTrueAndDateBetweenOrderByDateDesc(userId, currentStart, currentEnd, pageable)
+                .map(this::convertToResponseDTO); // Supondo que você tem esse método como nas Categorias
 
-        return new DashboardResponseDTO(income, outcome, balance, transactionsPage);
+        // 6. Retorna tudo num pacote só!
+        return new DashboardResponseDTO(
+                currentIncome,
+                currentOutcome,
+                currentBalance,
+                prevIncome,
+                prevOutcome,
+                transactionsPage
+        );
     }
 
     // ==========================================
