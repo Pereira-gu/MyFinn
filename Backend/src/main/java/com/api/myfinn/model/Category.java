@@ -32,6 +32,9 @@ public class Category {
     @Column(name = "active", nullable = false)
     private Boolean active = true;
 
+    @Column(name = "is_fixed", nullable = false, columnDefinition = "boolean default false")
+    private Boolean isFixed = false;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;

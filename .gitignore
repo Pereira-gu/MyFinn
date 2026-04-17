@@ -1,0 +1,17 @@
+# Dependências do Node
+node_modules/
+.npm
+package-lock.json
+
+# Compilação do Java
+target/
+*.class
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+
+# Sistema
+.DS_Store
+Thumbs.db

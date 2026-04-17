@@ -38,7 +38,7 @@ class TransactionServiceTest {
         usuarioLogado.setId(UUID.randomUUID());
         UUID categoryId = UUID.randomUUID();
         // Correção: Adicionado o argumento 'true' para o campo 'active'
-        Category categoria = new Category(categoryId, "Salário", "💰", "#00FF00", true, usuarioLogado);
+        Category categoria = new Category(categoryId, "Salário", "💰", "#00FF00", true, true, usuarioLogado);
 
         TransactionRequestDTO pedido = new TransactionRequestDTO(
                 "Pagamento", 500000, "income", LocalDateTime.now(), true, categoryId, "CASH", 1, false
@@ -65,7 +65,7 @@ class TransactionServiceTest {
         usuarioLogado.setId(UUID.randomUUID());
         UUID categoryId = UUID.randomUUID();
         // Correção: Adicionado o argumento 'true' para o campo 'active'
-        Category categoria = new Category(categoryId, "Eletrónicos", "💻", "#000", true, usuarioLogado);
+        Category categoria = new Category(categoryId, "Eletrónicos", "💻", "#000", true, true, usuarioLogado);
 
         TransactionRequestDTO pedido = new TransactionRequestDTO(
                 "Monitor", 10000, "outcome", LocalDateTime.of(2026, 4, 1, 10, 0),
@@ -90,7 +90,7 @@ class TransactionServiceTest {
                 Mockito.eq(user.getId()), Mockito.any(), Mockito.any())).thenReturn(false);
 
         // Correção: Adicionado o argumento 'true' para o campo 'active'
-        Category cat = new Category(UUID.randomUUID(), "Assinatura", "📺", "#000", true, user);
+        Category cat = new Category(UUID.randomUUID(), "Assinatura", "📺", "#000", true,true, user);
         Transaction recorrentePassada = new Transaction();
         recorrentePassada.setDescription("Netflix");
         recorrentePassada.setValueCents(3990);
