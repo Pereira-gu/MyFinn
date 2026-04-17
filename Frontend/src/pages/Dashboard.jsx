@@ -1,434 +1,421 @@
-import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+import { 
+  PieChart, Pie, Cell, ResponsiveContainer, Tooltip 
+} from 'recharts';
+import { 
+  LayoutDashboard, Wallet, ChevronLeft, ChevronRight, 
+  Search, PlusCircle, ArrowUpRight, ArrowDownRight, X,
+  Activity, Zap
+} from 'lucide-react';
 
+/**
+ * Dashboard Component: Centraliza os indicadores de saúde financeira.
+ * Implementa Taxa de Retenção, Burn Rate, MoM e Comprometimento de Renda.
+ */
 export function Dashboard() {
   const [transactions, setTransactions] = useState([]);
   const [categories, setCategories] = useState([]);
-  
-  // ESTADOS DO DASHBOARD
   const [summary, setSummary] = useState({ income: 0, outcome: 0, balance: 0 });
+  const [prevMonthSummary, setPrevMonthSummary] = useState({ income: 0, outcome: 0 });
   const [isLoading, setIsLoading] = useState(true);
-
-  // TEMPO E PAGINAÇÃO
+  
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth() + 1);
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
-  const [currentPage, setCurrentPage] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
-  
-  // ESTADOS DO MODAL
+  const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingTransactionId, setEditingTransactionId] = useState(null); 
-  const [description, setDescription] = useState('');
-  const [value, setValue] = useState('');
-  const [type, setType] = useState('outcome');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [categoryId, setCategoryId] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('DEBIT');
-  const [installments, setInstallments] = useState(1);
-  const [isPaid, setIsPaid] = useState(true); // NOVO: Status no formulário
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  const [newTx, setNewTx] = useState({
+    description: '', valueCents: '', type: 'outcome', 
+    date: new Date().toISOString().split('T')[0], 
+    isPaid: true, categoryId: '', paymentMethod: 'DEBIT'
+  });
 
   const navigate = useNavigate();
 
-  // ==========================================
-  // NOVO: DADOS PARA O GRÁFICO (RAIO-X)
-  // ==========================================
-  const expensesByCategory = transactions
-    .filter(t => t.type === 'outcome') // Pega apenas nas saídas
-    .reduce((acc, t) => {
-      const existing = acc.find(item => item.name === t.categoryName);
-      if (existing) {
-        existing.value += (t.valueCents / 100); // Soma o valor se a categoria já existir
-      } else {
-        // Se for uma categoria nova, procura a cor dela na nossa lista de categorias
-        const cat = categories.find(c => c.name === t.categoryName);
-        acc.push({
-          name: t.categoryName,
-          value: (t.valueCents / 100),
-          color: cat ? cat.color : '#3B82F6' // Se não achar cor, põe azul
-        });
-      }
-      return acc;
-    }, [])
-    .sort((a, b) => b.value - a.value); // Ordena da maior despesa para a mais pequena
-
   useEffect(() => {
-    const token = localStorage.getItem('@MyFinn:token');
-    if (!token) {
-      navigate('/login');
-      return;
-    }
-    fetchTransactions();
-    fetchCategories();
-  }, [navigate, currentMonth, currentYear, currentPage]); // Roda sempre que a página ou o tempo mudam
+    fetchData();
+  }, [currentMonth, currentYear]);
 
-  async function fetchTransactions() {
+  /**
+   * Busca dados do mês atual e do mês anterior para comparativos.
+   */
+  async function fetchData() {
     setIsLoading(true);
     try {
-      // Agora chamamos a nossa rota especial "/dashboard" passando a página!
-      const response = await api.get(`/transactions/dashboard?month=${currentMonth}&year=${currentYear}&page=${currentPage}&size=5`);
-      
-      // O Backend agora devolve tudo separadinho
-      setSummary({
-        income: response.data.incomeCents,
-        outcome: response.data.outcomeCents,
-        balance: response.data.balanceCents
-      });
-      
-      setTransactions(response.data.transactions.content); // A lista real
-      setTotalPages(response.data.transactions.totalPages); // O total de páginas
+      const prevMonth = currentMonth === 1 ? 12 : currentMonth - 1;
+      const prevYear = currentMonth === 1 ? currentYear - 1 : currentYear;
 
+      const [transRes, catRes, prevRes] = await Promise.all([
+        api.get(`/transactions/dashboard?month=${currentMonth}&year=${currentYear}`),
+        api.get('/categories'),
+        api.get(`/transactions/dashboard?month=${prevMonth}&year=${prevYear}`)
+      ]);
+      
+      setSummary({
+        income: transRes.data.incomeCents,
+        outcome: transRes.data.outcomeCents,
+        balance: transRes.data.balanceCents
+      });
+      setPrevMonthSummary({
+        income: prevRes.data.incomeCents,
+        outcome: prevRes.data.outcomeCents
+      });
+      setTransactions(transRes.data.transactions.content);
+      setCategories(catRes.data);
     } catch (error) {
-      if (error.response?.status === 403) handleLogout();
+      if (error.response?.status === 403) navigate('/login');
     } finally {
       setIsLoading(false);
     }
   }
 
-  async function fetchCategories() {
-    try {
-      const response = await api.get('/categories');
-      setCategories(response.data);
-    } catch (error) {
-      console.error("Erro ao buscar categorias");
-    }
-  }
-
-  // ==========================================
-  // O BOTÃO "JÁ PAGUEI"
-  // ==========================================
-  async function handleTogglePaid(transaction) {
-    try {
-      // Chama a rota rápida PATCH
-      await api.patch(`/transactions/${transaction.id}/pay`);
-      fetchTransactions(); // Atualiza a lista
-    } catch (error) {
-      alert("Erro ao alterar o status.");
-    }
-  }
-
-  // ==========================================
-  // NAVEGAÇÃO
-  // ==========================================
-  function handlePrevMonth() {
-    setCurrentPage(0); // Volta para a pág 1 ao mudar de mês
-    if (currentMonth === 1) { setCurrentMonth(12); setCurrentYear(currentYear - 1); } 
-    else { setCurrentMonth(currentMonth - 1); }
-  }
-
-  function handleNextMonth() {
-    setCurrentPage(0); // Volta para a pág 1 ao mudar de mês
-    if (currentMonth === 12) { setCurrentMonth(1); setCurrentYear(currentYear + 1); } 
-    else { setCurrentMonth(currentMonth + 1); }
-  }
-
-  const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
-
-  // ==========================================
-  // FORMULÁRIO
-  // ==========================================
-  async function handleSubmit(e) {
+  // Envia os dados para a API (convertendo para centavos)
+  async function handleCreateTransaction(e) {
     e.preventDefault();
-    setIsSubmitting(true);
-
     try {
-      const numericValue = parseFloat(value.replace(',', '.'));
-      const valueCents = Math.round(numericValue * 100);
-      const formattedDate = date.includes('T') ? date : `${date}T12:00:00`;
-
-      const payload = { 
-        description, valueCents, type, date: formattedDate, 
-        categoryId, paymentMethod, installments: parseInt(installments),
-        isPaid // Enviamos se foi pago ou não
+      const payload = {
+        ...newTx,
+        date: newTx.date + "T12:00:00", // Formatar para LocalDateTime
+        valueCents: Math.round(parseFloat(newTx.valueCents.replace(',', '.')) * 100)
       };
-
-      if (editingTransactionId) {
-        await api.put(`/transactions/${editingTransactionId}`, payload);
-      } else {
-        await api.post('/transactions', payload);
-      }
-
-      closeModal();
-      fetchTransactions();
+      await api.post('/transactions', payload);
+      setIsModalOpen(false);
+      
+      // Reseta o formulário
+      setNewTx({
+        description: '', valueCents: '', type: 'outcome', 
+        date: new Date().toISOString().split('T')[0], 
+        isPaid: true, categoryId: '', paymentMethod: 'DEBIT'
+      });
+      fetchData(); 
     } catch (error) {
-      alert(error.response?.data?.message || "Erro ao salvar transação.");
-    } finally {
-      setIsSubmitting(false);
+      alert(error.response?.data?.message || "Erro ao criar transação.");
     }
   }
 
-  async function handleDeleteTransaction(id) {
-    if (!window.confirm("Tem certeza que deseja excluir esta transação?")) return;
-    try {
-      await api.delete(`/transactions/${id}`);
-      fetchTransactions();
-    } catch (error) {
-      alert("Erro ao excluir transação.");
-    }
-  }
+  // --- CÁLCULOS DE SAÚDE FINANCEIRA ---
 
-  function openEditModal(t) {
-    setEditingTransactionId(t.id);
-    setDescription(t.description);
-    setValue((t.valueCents / 100).toFixed(2)); 
-    setType(t.type);
-    setDate(t.date.split('T')[0]); 
-    setCategoryId(t.categoryId);
-    setPaymentMethod(t.paymentMethod || 'DEBIT');
-    setInstallments(t.installments || 1);
-    setIsPaid(t.isPaid); // Carrega o status
-    setIsModalOpen(true);
-  }
+  const healthMetrics = useMemo(() => {
+    const today = new Date();
+    const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
+    const daysElapsed = currentMonth === today.getMonth() + 1 ? today.getDate() : daysInMonth;
 
-  function openNewTransactionModal() {
-    setEditingTransactionId(null);
-    setDescription('');
-    setValue('');
-    setType('outcome');
-    setDate(new Date().toISOString().split('T')[0]);
-    if (categories.length > 0) setCategoryId(categories[0].id);
-    setPaymentMethod('DEBIT');
-    setInstallments(1);
-    setIsPaid(true); // Por padrão, começa como pago
-    setIsModalOpen(true);
-  }
+    // 1. Taxa de Retenção (A Regra de Ouro)
+    const retention = summary.income > 0 
+      ? Math.max(0, ((summary.income - summary.outcome) / summary.income) * 100) 
+      : 0;
 
-  function closeModal() { setIsModalOpen(false); }
-  function handleLogout() { localStorage.removeItem('@MyFinn:token'); navigate('/login'); }
+    // 2. Ritmo de Gasto Diário (Burn Rate)
+    const burnRate = summary.outcome / daysElapsed;
 
-  // ==========================================
-  // HELPERS
-  // ==========================================
-  function formatCurrency(cents) {
-    return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-  }
+    // 3. Comparativo MoM (%)
+    const calculateMoM = (current, prev) => {
+      if (prev === 0) return 0;
+      return ((current - prev) / prev) * 100;
+    };
 
-  function formatDate(dateString) { return new Date(dateString).toLocaleDateString('pt-BR'); }
-  
-  function getPaymentMethodLabel(method) {
-    if(method === 'CREDIT') return '💳 Crédito';
-    if(method === 'CASH') return '💵 Dinheiro';
-    return '🏦 Débito';
-  }
+    // 4. Comprometimento (Ex: Categorias fixas como Moradia, Luz)
+    const fixedExpenses = transactions
+      .filter(t => t.type === 'outcome' && /moradia|aluguel|luz|água|internet/i.test(t.categoryName))
+      .reduce((acc, t) => acc + t.valueCents, 0);
+    const commitment = summary.income > 0 ? (fixedExpenses / summary.income) * 100 : 0;
 
-  if (isLoading) return <div className="min-h-screen flex items-center justify-center bg-gray-100">Carregando...</div>;
+    return { retention, burnRate, incomeMoM: calculateMoM(summary.income, prevMonthSummary.income), outcomeMoM: calculateMoM(summary.outcome, prevMonthSummary.outcome), commitment };
+  }, [summary, prevMonthSummary, transactions, currentMonth, currentYear]);
 
+  // --- CÁLCULO DE CATEGORIAS PARA O GRÁFICO ---
+  const expensesByCategory = useMemo(() => {
+    return transactions
+      .filter(t => t.type === 'outcome')
+      .reduce((acc, t) => {
+        const existing = acc.find(item => item.name === t.categoryName);
+        if (existing) {
+          existing.value += (t.valueCents / 100);
+        } else {
+          const cat = categories.find(c => c.name === t.categoryName);
+          acc.push({
+            name: t.categoryName, value: (t.valueCents / 100), color: cat ? cat.color : '#94A3B8'
+          });
+        }
+        return acc;
+      }, []).sort((a, b) => b.value - a.value);
+  }, [transactions, categories]);
 
+  const totalExpenses = expensesByCategory.reduce((sum, item) => sum + item.value, 0);
+
+  const formatCurrency = (cents) => 
+    (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+  if (isLoading) return <div className="flex h-full items-center justify-center text-slate-500 font-medium">Analisando sua saúde financeira...</div>;
 
   return (
-    <div className="min-h-screen bg-gray-100 font-sans relative pb-10">
-      <header className="bg-primary text-white p-6 shadow-md">
-        <div className="max-w-4xl mx-auto flex justify-between items-center">
-          <h1 className="text-2xl font-bold">MyFinn</h1>
-          <div className="flex gap-4 items-center">
-            <Link to="/categories" className="hover:underline text-sm font-medium">Categorias</Link>
-            <button onClick={handleLogout} className="bg-white/20 hover:bg-white/30 px-3 py-1 rounded transition-colors text-sm font-medium">Sair</button>
+    <>
+      {/* CABEÇALHO PADRONIZADO */}
+      <header className="flex flex-col lg:flex-row justify-between items-start lg:items-end mb-8 gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Painel de Saúde</h1>
+          <p className="text-slate-500 text-sm">Visualize o seu progresso e ritmo financeiro.</p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center bg-white rounded-xl shadow-sm border border-slate-200 p-1">
+            <button onClick={() => setCurrentMonth(m => m === 1 ? 12 : m - 1)} className="p-2 hover:bg-slate-50 rounded-lg text-slate-400 transition-colors"><ChevronLeft size={16}/></button>
+            <span className="px-4 text-[10px] font-black text-slate-700 min-w-[130px] text-center uppercase tracking-widest">
+              {new Date(currentYear, currentMonth - 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}
+            </span>
+            <button onClick={() => setCurrentMonth(m => m === 12 ? 1 : m + 1)} className="p-2 hover:bg-slate-50 rounded-lg text-slate-400 transition-colors"><ChevronRight size={16}/></button>
           </div>
+          <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl shadow-sm transition-all">
+            <PlusCircle size={18} /> Novo Lançamento
+          </button>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto p-6 -mt-8">
+      {/* GRID DE INDICADORES PRINCIPAIS */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         
-        {/* NAVEGAÇÃO TEMPORAL */}
-        <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm mb-6">
-          <button onClick={handlePrevMonth} className="text-gray-500 hover:text-primary text-2xl px-4 font-bold">‹</button>
-          <div className="text-center">
-            <span className="block text-lg font-bold text-gray-800">{monthNames[currentMonth - 1]}</span>
-            <span className="block text-xs text-gray-500 font-medium">{currentYear}</span>
-          </div>
-          <button onClick={handleNextMonth} className="text-gray-500 hover:text-primary text-2xl px-4 font-bold">›</button>
-        </div>
-
-        {/* CARDS (Agora usam o Summary que vem do Backend!) */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-green-500">
-            <h3 className="text-gray-500 text-sm font-medium mb-1">Entradas</h3>
-            <p className="text-2xl font-bold text-gray-800">{formatCurrency(summary.income)}</p>
-          </div>
-          <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-red-500">
-            <h3 className="text-gray-500 text-sm font-medium mb-1">Saídas</h3>
-            <p className="text-2xl font-bold text-gray-800">{formatCurrency(summary.outcome)}</p>
-          </div>
-          <div className={`bg-white p-6 rounded-xl shadow-sm border-l-4 ${summary.balance >= 0 ? 'border-primary' : 'border-red-500'}`}>
-            <h3 className="text-gray-500 text-sm font-medium mb-1">Saldo do Mês</h3>
-            <p className={`text-2xl font-bold ${summary.balance >= 0 ? 'text-primary' : 'text-red-600'}`}>{formatCurrency(summary.balance)}</p>
+        {/* Entradas com MoM */}
+        <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+          <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Entradas</p>
+          <h3 className="text-2xl font-bold text-slate-800">{formatCurrency(summary.income)}</h3>
+          <div className={`flex items-center gap-1 mt-2 text-[10px] font-bold ${healthMetrics.incomeMoM >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+            {healthMetrics.incomeMoM >= 0 ? <ArrowUpRight size={12}/> : <ArrowDownRight size={12}/>}
+            {Math.abs(healthMetrics.incomeMoM).toFixed(1)}% vs mês passado
           </div>
         </div>
 
-        {expensesByCategory.length > 0 && (
-          <div className="bg-white p-6 rounded-xl shadow-sm mb-8 animate-fade-in">
-            <h2 className="text-lg font-bold text-gray-800 mb-4">Raio-X de Saídas ({monthNames[currentMonth - 1]})</h2>
-            <div className="h-64 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={expensesByCategory}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60} // Faz o buraco no meio (Donut)
-                    outerRadius={80}
-                    paddingAngle={5} // Espaço entre as fatias
-                    dataKey="value"
-                  >
-                    {expensesByCategory.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  {/* Quando passas o rato, formata para Moeda! */}
-                  <Tooltip formatter={(value) => formatCurrency(value * 100)} />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
+        {/* Saídas com MoM */}
+        <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+          <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Saídas</p>
+          <h3 className="text-2xl font-bold text-slate-800">{formatCurrency(summary.outcome)}</h3>
+          <div className={`flex items-center gap-1 mt-2 text-[10px] font-bold ${healthMetrics.outcomeMoM <= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+            {healthMetrics.outcomeMoM <= 0 ? <ArrowDownRight size={12}/> : <ArrowUpRight size={12}/>}
+            {Math.abs(healthMetrics.outcomeMoM).toFixed(1)}% vs mês passado
+          </div>
+        </div>
+
+        {/* Burn Rate Diário */}
+        <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm relative overflow-hidden">
+          <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Ritmo de Gasto</p>
+          <h3 className="text-2xl font-bold text-slate-800">{formatCurrency(healthMetrics.burnRate)}<span className="text-xs font-medium text-slate-400"> /dia</span></h3>
+          <p className="text-[10px] text-slate-500 mt-2 flex items-center gap-1">
+            <Activity size={12} className="text-blue-500" />
+            Ritmo baseado em {new Date().getDate()} dias
+          </p>
+        </div>
+
+        {/* Taxa de Retenção (A Regra de Ouro) */}
+        <div className={`bg-white p-6 rounded-3xl border-2 shadow-sm flex items-center justify-between ${healthMetrics.retention >= 10 ? 'border-emerald-100 bg-emerald-50/10' : 'border-rose-100 bg-rose-50/10'}`}>
+          <div>
+            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Retenção</p>
+            <h3 className={`text-2xl font-bold ${healthMetrics.retention >= 10 ? 'text-emerald-600' : 'text-rose-600'}`}>
+              {healthMetrics.retention.toFixed(0)}%
+            </h3>
+          </div>
+          <div className="w-12 h-12">
+            <ResponsiveContainer>
+              <PieChart>
+                <Pie 
+                  data={[{v: healthMetrics.retention}, {v: 100 - healthMetrics.retention}]} 
+                  innerRadius={15} outerRadius={22} stroke="none" dataKey="v" startAngle={90} endAngle={-270}
+                >
+                  <Cell fill={healthMetrics.retention >= 10 ? '#10b981' : '#f43f5e'} />
+                  <Cell fill="#f1f5f9" />
+                </Pie>
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* LADO ESQUERDO: Layout Principal */}
+        <div className="lg:col-span-2 space-y-8">
+          {/* Gráfico de Comprometimento de Renda */}
+          <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="font-bold text-slate-800">Comprometimento de Renda</h3>
+                <p className="text-xs text-slate-500 italic">Peso das despesas essenciais sobre o ganho total</p>
+              </div>
+              <span className={`text-sm font-bold ${healthMetrics.commitment > 50 ? 'text-amber-500' : 'text-emerald-600'}`}>
+                {healthMetrics.commitment.toFixed(1)}%
+              </span>
+            </div>
+            <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+              <div 
+                className={`h-full transition-all duration-1000 ${healthMetrics.commitment > 50 ? 'bg-amber-500' : 'bg-blue-500'}`}
+                style={{ width: `${Math.min(100, healthMetrics.commitment)}%` }}
+              />
+            </div>
+            <div className="flex justify-between mt-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              <span>0% (Ideal)</span>
+              <span>50% (Atenção)</span>
+              <span>100% (Crítico)</span>
             </div>
           </div>
-        )}
 
-
-        {/* LISTA DE TRANSAÇÕES */}
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-gray-100 flex justify-between items-center">
-            <h2 className="text-lg font-bold text-gray-800">Transações de {monthNames[currentMonth - 1]}</h2>
-            <button onClick={openNewTransactionModal} className="bg-primary hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-              + Nova
-            </button>
+          {/* Listagem de Transações Simplificada */}
+          <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-slate-50 flex justify-between items-center">
+              <h3 className="font-bold text-slate-800">Últimos Lançamentos</h3>
+              <Search size={16} className="text-slate-300" />
+            </div>
+            <ul className="divide-y divide-slate-50">
+              {transactions.slice(0, 5).map((t) => (
+                <li key={t.id} className="p-5 flex justify-between items-center hover:bg-slate-50 transition-colors">
+                  <div className="flex items-center gap-4">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${t.isPaid ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
+                      {t.isPaid ? '✅' : '⏳'}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-700">{t.description}</p>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">{t.categoryName}</p>
+                    </div>
+                  </div>
+                  <span className={`font-bold text-sm ${t.type === 'income' ? 'text-emerald-600' : 'text-slate-800'}`}>
+                    {t.type === 'income' ? '+' : '-'} {formatCurrency(t.valueCents)}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </div>
+        </div>
+
+        {/* LADO DIREITO: Gráficos e Insights (A área circulada) */}
+        <div className="space-y-6">
           
-          <div className="p-0">
-            {transactions.length === 0 ? (
-              <p className="text-gray-500 text-center py-8">Não há transações registadas.</p>
+          {/* Distribuição por Categoria */}
+          <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+            <h3 className="font-bold text-slate-800 mb-6 text-sm">Distribuição de Gastos</h3>
+            {expensesByCategory.length > 0 ? (
+              <>
+                <div className="h-48 w-full mb-6">
+                  <ResponsiveContainer>
+                    <PieChart>
+                      <Pie data={expensesByCategory} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                        {expensesByCategory.map((entry, index) => <Cell key={index} fill={entry.color} stroke="none" />)}
+                      </Pie>
+                      <Tooltip formatter={(value) => formatCurrency(value * 100)} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="space-y-4">
+                  {expensesByCategory.slice(0, 4).map((cat, i) => (
+                    <div key={i} className="flex flex-col gap-1.5">
+                      <div className="flex justify-between text-xs font-bold text-slate-600">
+                        <span>{cat.name}</span>
+                        <span>{formatCurrency(cat.value * 100)}</span>
+                      </div>
+                      <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full" style={{width: `${(cat.value / totalExpenses) * 100}%`, backgroundColor: cat.color}} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
             ) : (
-              <ul className="divide-y divide-gray-100">
-                {transactions.map((t) => (
-                  // Se não estiver pago, a linha fica ligeiramente transparente
-                  <li key={t.id} className={`p-6 flex justify-between items-center group transition-all ${!t.isPaid ? 'opacity-60 bg-gray-50' : 'hover:bg-gray-50'}`}>
-                    
-                    <div className="flex items-center gap-4">
-                      {/* O BOTÃO MÁGICO "JÁ PAGUEI" */}
-                      <button 
-                        onClick={() => handleTogglePaid(t)} 
-                        className="text-2xl hover:scale-110 transition-transform active:scale-95" 
-                        title={t.isPaid ? "Marcar como pendente" : "Marcar como pago"}
-                      >
-                        {t.isPaid ? '✅' : '⏳'}
-                      </button>
-
-                      <div>
-                        {/* Se não estiver pago, risca o nome */}
-                        <p className={`font-medium ${!t.isPaid ? 'text-gray-500 line-through' : 'text-gray-800'}`}>{t.description}</p>
-                        <p className="text-sm text-gray-500">
-                          {formatDate(t.date)} • {t.categoryName} • {getPaymentMethodLabel(t.paymentMethod)}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-4">
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-                        <button onClick={() => openEditModal(t)} className="text-blue-500 hover:text-blue-700 text-sm font-medium bg-blue-50 px-2 py-1 rounded">Editar</button>
-                        <button onClick={() => handleDeleteTransaction(t.id)} className="text-red-500 hover:text-red-700 text-sm font-medium bg-red-50 px-2 py-1 rounded">Excluir</button>
-                      </div>
-                      <div className={`font-bold ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
-                        {t.type === 'income' ? '+' : '-'} {formatCurrency(t.valueCents)}
-                      </div>
-                    </div>
-
-                  </li>
-                ))}
-              </ul>
+              <p className="text-xs text-center text-slate-400 italic py-8">Nenhuma despesa registrada.</p>
             )}
           </div>
 
-          {/* CONTROLES DE PAGINAÇÃO */}
-          {totalPages > 1 && (
-            <div className="flex justify-between items-center p-4 border-t border-gray-100 bg-gray-50">
-              <button 
-                disabled={currentPage === 0} 
-                onClick={() => setCurrentPage(c => c - 1)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Anterior
-              </button>
-              <span className="text-sm text-gray-600 font-medium">
-                Página {currentPage + 1} de {totalPages}
-              </span>
-              <button 
-                disabled={currentPage === totalPages - 1} 
-                onClick={() => setCurrentPage(c => c + 1)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Próxima
-              </button>
+          {/* Insights Inteligentes */}
+          <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+            <h3 className="font-bold text-slate-800 mb-6 text-sm flex items-center gap-2">
+              <Zap size={16} className="text-amber-500" /> Insights do MyFinn
+            </h3>
+            <div className="space-y-4">
+              {healthMetrics.retention >= 10 ? (
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  🌟 **Excelente!** Você está retendo mais de 10% da sua renda. Este é o caminho para a liberdade financeira.
+                </p>
+              ) : (
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  ⚠️ **Atenção:** Sua taxa de retenção está abaixo de 10%. Tente reduzir gastos variáveis para "pagar a si mesmo" primeiro.
+                </p>
+              )}
+              {healthMetrics.commitment > 50 && (
+                <p className="text-xs text-slate-600 leading-relaxed border-t border-slate-50 pt-4">
+                  🏠 Suas contas fixas estão pesando muito no orçamento. Considere renegociar contratos ou reduzir custos recorrentes.
+                </p>
+              )}
             </div>
-          )}
+          </div>
+
         </div>
-      </main>
+      </div>
 
-      {/* MODAL MANTÉM-SE IGUAL, MAS COM A CAIXA "JÁ PAGUEI" NO FINAL */}
+      {/* MODAL NOVA TRANSAÇÃO */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-6 animate-fade-in overflow-y-auto max-h-[90vh]">
-            {/* Cabeçalho do Modal... */}
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-gray-800">{editingTransactionId ? 'Editar Transação' : 'Nova Transação'}</h2>
-              <button onClick={closeModal} className="text-gray-500 hover:text-gray-800 text-xl font-bold">&times;</button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Entradas... */}
-              <div className="flex gap-4">
-                <label className={`flex-1 text-center py-2 border rounded-lg cursor-pointer transition-colors ${type === 'outcome' ? 'bg-red-500 text-white border-red-500' : 'bg-white text-gray-600 border-gray-300'}`}>
-                  <input type="radio" name="type" className="hidden" checked={type === 'outcome'} onChange={() => setType('outcome')} /> Saída
-                </label>
-                <label className={`flex-1 text-center py-2 border rounded-lg cursor-pointer transition-colors ${type === 'income' ? 'bg-green-500 text-white border-green-500' : 'bg-white text-gray-600 border-gray-300'}`}>
-                  <input type="radio" name="type" className="hidden" checked={type === 'income'} onChange={() => setType('income')} /> Entrada
-                </label>
-              </div>
-
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label><input type="text" required value={description} onChange={e => setDescription(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-primary focus:border-primary" /></div>
-              
-              <div className="flex gap-4">
-                <div className="w-1/2"><label className="block text-sm font-medium text-gray-700 mb-1">Valor</label><input type="text" required value={value} onChange={e => setValue(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-primary focus:border-primary" /></div>
-                <div className="w-1/2"><label className="block text-sm font-medium text-gray-700 mb-1">Data</label><input type="date" required value={date} onChange={e => setDate(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-primary focus:border-primary" /></div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Categoria</label>
-                <select required value={categoryId} onChange={e => setCategoryId(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-primary focus:border-primary">
-                  {categories.map(c => (<option key={c.id} value={c.id}>{c.icon} {c.name}</option>))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Método de Pagamento</label>
-                <div className="flex gap-2">
-                  <label className={`flex-1 text-center py-2 border rounded-lg cursor-pointer transition-colors text-sm ${paymentMethod === 'CASH' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-600 border-gray-300'}`}><input type="radio" className="hidden" checked={paymentMethod === 'CASH'} onChange={() => { setPaymentMethod('CASH'); setInstallments(1); }} /> Dinheiro</label>
-                  <label className={`flex-1 text-center py-2 border rounded-lg cursor-pointer transition-colors text-sm ${paymentMethod === 'DEBIT' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-600 border-gray-300'}`}><input type="radio" className="hidden" checked={paymentMethod === 'DEBIT'} onChange={() => { setPaymentMethod('DEBIT'); setInstallments(1); }} /> Débito</label>
-                  <label className={`flex-1 text-center py-2 border rounded-lg cursor-pointer transition-colors text-sm ${paymentMethod === 'CREDIT' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-600 border-gray-300'}`}><input type="radio" className="hidden" checked={paymentMethod === 'CREDIT'} onChange={() => setPaymentMethod('CREDIT')} /> Crédito</label>
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl relative border border-slate-100">
+            <button onClick={() => setIsModalOpen(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-700 transition-colors bg-slate-50 p-2 rounded-full">
+              <X size={18} />
+            </button>
+            
+            <h2 className="text-2xl font-bold text-slate-800 mb-8">Nova Transação</h2>
+            
+            <form onSubmit={handleCreateTransaction} className="space-y-5">
+              <div className="grid grid-cols-2 gap-5">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Tipo</label>
+                  <select value={newTx.type} onChange={e => setNewTx({...newTx, type: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all">
+                    <option value="outcome">Despesa</option>
+                    <option value="income">Receita</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Valor (R$)</label>
+                  <input type="number" step="0.01" required value={newTx.valueCents} onChange={e => setNewTx({...newTx, valueCents: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-semibold" placeholder="0.00" />
                 </div>
               </div>
 
-              {paymentMethod === 'CREDIT' && (
-                <div className="animate-fade-in"><label className="block text-sm font-medium text-gray-700 mb-1">Número de Parcelas</label><input type="number" min="1" max="24" required value={installments} onChange={e => setInstallments(e.target.value)} disabled={!!editingTransactionId} className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-primary focus:border-primary disabled:bg-gray-100" /></div>
-              )}
-
-              {/* NOVO: CHECKBOX DE STATUS NO FORMULÁRIO */}
-              <div className="pt-2">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input type="checkbox" checked={isPaid} onChange={e => setIsPaid(e.target.checked)} className="w-5 h-5 text-primary border-gray-300 rounded focus:ring-primary" />
-                  <span className="text-sm font-medium text-gray-700">A transação já foi paga / efetuada?</span>
-                </label>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Descrição</label>
+                <input type="text" required value={newTx.description} onChange={e => setNewTx({...newTx, description: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" placeholder="Ex: Conta de Luz, Salário..." />
               </div>
 
-              <button type="submit" disabled={isSubmitting || categories.length === 0} className="w-full bg-primary hover:bg-blue-600 text-white font-bold py-3 rounded-lg mt-6 transition-colors disabled:opacity-50">
-                {isSubmitting ? 'A salvar...' : (editingTransactionId ? 'Atualizar Transação' : 'Salvar Transação')}
+              <div className="grid grid-cols-2 gap-5">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Data</label>
+                  <input type="date" required value={newTx.date} onChange={e => setNewTx({...newTx, date: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-slate-700" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Categoria</label>
+                  <select required value={newTx.categoryId} onChange={e => setNewTx({...newTx, categoryId: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all">
+                    <option value="">Selecione...</option>
+                    {categories.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-5">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Método</label>
+                  <select value={newTx.paymentMethod} onChange={e => setNewTx({...newTx, paymentMethod: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all">
+                    <option value="DEBIT">Débito</option>
+                    <option value="CREDIT">Crédito</option>
+                    <option value="CASH">Dinheiro</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Status</label>
+                  <select value={newTx.isPaid} onChange={e => setNewTx({...newTx, isPaid: e.target.value === 'true'})} className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all">
+                    <option value="true">Já Pago</option>
+                    <option value="false">Pendente</option>
+                  </select>
+                </div>
+              </div>
+
+              <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl mt-6 transition-all shadow-md shadow-blue-600/20">
+                Salvar Transação
               </button>
             </form>
           </div>
         </div>
       )}
-
-      <Footer />
-    </div>
+    </>
   );
 }

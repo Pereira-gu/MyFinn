@@ -44,8 +44,8 @@ export function Register() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
-      <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 px-4">
+  <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 my-10">
         <div className="text-center mb-8">
           <h2 className="text-3xl font-bold text-gray-800">Criar Conta</h2>
           <p className="text-gray-500 mt-2">Junte-se ao MyFinn e controle o seu dinheiro.</p>

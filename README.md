@@ -35,4 +35,4 @@ A API possui um `DataSeeder` embutido. Ao rodar o Backend com o banco de dados l
 
 1. **Clone o repositório:**
    ```bash
-   git clone [[https://github.com/SEU-USUARIO/myfinn.git](https://github.com/Pereira-gu/MyFinn)]
+   git clone (https://github.com/Pereira-gu/MyFinn)

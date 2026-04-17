@@ -45,10 +45,8 @@ export function Login() {
 
   return (
     // Fundo cinza a ocupar 100% da altura da tela, conteúdo centrado
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
-      
-      {/* O "Cartão" branco do formulário */}
-      <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 px-4">
+    <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 my-10">
         <div className="text-center mb-8">
           <h2 className="text-3xl font-bold text-gray-800">MyFinn</h2>
           <p className="text-gray-500 mt-2">Bem-vindo de volta! Faça o seu login.</p>
