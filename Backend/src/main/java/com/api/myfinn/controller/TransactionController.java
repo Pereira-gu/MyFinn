@@ -34,7 +34,7 @@ public class TransactionController {
         if (year == null) year = LocalDate.now().getYear();
 
         transactionService.checkAndCreateRecurring(loggedUser, month, year);
-        DashboardResponseDTO dashboardData = transactionService.getDashboardData(loggedUser, month, year, page, size);
+        DashboardResponseDTO dashboardData = transactionService.getDashboard(month, year, page, size, loggedUser);
         return ResponseEntity.ok(dashboardData);
     }
 
