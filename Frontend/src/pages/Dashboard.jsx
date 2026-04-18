@@ -14,10 +14,17 @@ export function Dashboard() {
   const [transactions, setTransactions] = useState([]);
   const [categories, setCategories] = useState([]);
   
-  // 1. ESTADO ATUALIZADO: Agora recebe os dados do mês anterior diretamente
   const [summary, setSummary] = useState({ 
-    income: 0, outcome: 0, balance: 0,
-    prevIncome: 0, prevOutcome: 0 
+    income: 0, outcome: 0, balance: 0, prevIncome: 0, prevOutcome: 0 
+  });
+  
+  // 👇 1. NOVO ESTADO: Recebendo as métricas oficiais do Backend
+  const [healthMetrics, setHealthMetrics] = useState({
+    retentionRate: 0,
+    burnRateCents: 0,
+    incomeMoM: 0,
+    outcomeMoM: 0,
+    commitmentRate: 0
   });
   
   const [isLoading, setIsLoading] = useState(true);
@@ -41,7 +48,6 @@ export function Dashboard() {
   async function fetchData() {
     setIsLoading(true);
     try {
-      // 2. FIM DO OVER-FETCHING: Apenas uma requisição para transações!
       const [transRes, catRes] = await Promise.all([
         api.get(`/transactions/dashboard?month=${currentMonth}&year=${currentYear}`),
         api.get('/categories')
@@ -51,11 +57,14 @@ export function Dashboard() {
         income: transRes.data.incomeCents,
         outcome: transRes.data.outcomeCents,
         balance: transRes.data.balanceCents,
-        prevIncome: transRes.data.previousMonthIncomeCents,   // Novo do Backend!
-        prevOutcome: transRes.data.previousMonthOutcomeCents  // Novo do Backend!
+        prevIncome: transRes.data.previousMonthIncomeCents,
+        prevOutcome: transRes.data.previousMonthOutcomeCents
       });
+
+      // 👇 2. SALVANDO AS MÉTRICAS (Fim da matemática no React)
+      setHealthMetrics(transRes.data.healthMetrics);
       
-      setTransactions(transRes.data.transactions.content || transRes.data.transactions);
+      setTransactions(transRes.data.transactions?.content || transRes.data.transactions || []);
       setCategories(catRes.data);
     } catch (error) {
       if (error.response?.status === 403) navigate('/login');
@@ -86,46 +95,8 @@ export function Dashboard() {
     }
   }
 
-  // --- CÁLCULOS DE SAÚDE FINANCEIRA ---
-  const healthMetrics = useMemo(() => {
-    const today = new Date();
-    const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
-    const daysElapsed = currentMonth === today.getMonth() + 1 ? today.getDate() : daysInMonth;
+  // 👇 3. ADEUS `useMemo` COM CÁLCULOS COMPLEXOS! APAGADO COM SUCESSO! 🧹
 
-    const retention = summary.income > 0 
-      ? Math.max(0, ((summary.income - summary.outcome) / summary.income) * 100) 
-      : 0;
-
-    const burnRate = summary.outcome / daysElapsed;
-
-    const calculateMoM = (current, prev) => {
-      if (!prev || prev === 0) return 0;
-      return ((current - prev) / prev) * 100;
-    };
-
-    // 3. FIM DA GAMBIARRA DO REGEX: Agora usamos a propriedade isFixed da Categoria!
-    const fixedExpenses = transactions
-      .filter(t => t.type === 'outcome')
-      .filter(t => {
-        // Encontra a categoria desta transação e verifica se ela é essencial
-        const cat = categories.find(c => c.id === t.categoryId || c.name === t.categoryName);
-        return cat?.isFixed === true;
-      })
-      .reduce((acc, t) => acc + t.valueCents, 0);
-      
-    const commitment = summary.income > 0 ? (fixedExpenses / summary.income) * 100 : 0;
-
-    return { 
-      retention, 
-      burnRate, 
-      // 4. MoM LENDO DIRETO DO SUMMARY OTIMIZADO
-      incomeMoM: calculateMoM(summary.income, summary.prevIncome), 
-      outcomeMoM: calculateMoM(summary.outcome, summary.prevOutcome), 
-      commitment 
-    };
-  }, [summary, transactions, categories, currentMonth, currentYear]);
-
-  // --- CÁLCULO DE CATEGORIAS PARA O GRÁFICO ---
   const expensesByCategory = useMemo(() => {
     return transactions
       .filter(t => t.type === 'outcome')
@@ -173,6 +144,7 @@ export function Dashboard() {
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        {/* ENTRADAS */}
         <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
           <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Entradas</p>
           <h3 className="text-2xl font-bold text-slate-800">{formatCurrency(summary.income)}</h3>
@@ -182,6 +154,7 @@ export function Dashboard() {
           </div>
         </div>
 
+        {/* SAÍDAS */}
         <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
           <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Saídas</p>
           <h3 className="text-2xl font-bold text-slate-800">{formatCurrency(summary.outcome)}</h3>
@@ -191,27 +164,29 @@ export function Dashboard() {
           </div>
         </div>
 
+        {/* RITMO DE GASTO (Lendo burnRateCents do Java) */}
         <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm relative overflow-hidden">
           <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Ritmo de Gasto</p>
-          <h3 className="text-2xl font-bold text-slate-800">{formatCurrency(healthMetrics.burnRate)}<span className="text-xs font-medium text-slate-400"> /dia</span></h3>
+          <h3 className="text-2xl font-bold text-slate-800">{formatCurrency(healthMetrics.burnRateCents)}<span className="text-xs font-medium text-slate-400"> /dia</span></h3>
           <p className="text-[10px] text-slate-500 mt-2 flex items-center gap-1">
             <Activity size={12} className="text-blue-500" />
-            Ritmo baseado em {new Date().getDate()} dias
+            Ritmo calculado pelo MyFinn
           </p>
         </div>
 
-        <div className={`bg-white p-6 rounded-3xl border-2 shadow-sm flex items-center justify-between ${healthMetrics.retention >= 10 ? 'border-emerald-100 bg-emerald-50/10' : 'border-rose-100 bg-rose-50/10'}`}>
+        {/* RETENÇÃO (Lendo retentionRate do Java) */}
+        <div className={`bg-white p-6 rounded-3xl border-2 shadow-sm flex items-center justify-between ${healthMetrics.retentionRate >= 10 ? 'border-emerald-100 bg-emerald-50/10' : 'border-rose-100 bg-rose-50/10'}`}>
           <div>
             <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Retenção</p>
-            <h3 className={`text-2xl font-bold ${healthMetrics.retention >= 10 ? 'text-emerald-600' : 'text-rose-600'}`}>
-              {healthMetrics.retention.toFixed(0)}%
+            <h3 className={`text-2xl font-bold ${healthMetrics.retentionRate >= 10 ? 'text-emerald-600' : 'text-rose-600'}`}>
+              {healthMetrics.retentionRate.toFixed(0)}%
             </h3>
           </div>
           <div className="w-12 h-12">
             <ResponsiveContainer>
               <PieChart>
-                <Pie data={[{v: healthMetrics.retention}, {v: 100 - healthMetrics.retention}]} innerRadius={15} outerRadius={22} stroke="none" dataKey="v" startAngle={90} endAngle={-270}>
-                  <Cell fill={healthMetrics.retention >= 10 ? '#10b981' : '#f43f5e'} />
+                <Pie data={[{v: healthMetrics.retentionRate}, {v: Math.max(0, 100 - healthMetrics.retentionRate)}]} innerRadius={15} outerRadius={22} stroke="none" dataKey="v" startAngle={90} endAngle={-270}>
+                  <Cell fill={healthMetrics.retentionRate >= 10 ? '#10b981' : '#f43f5e'} />
                   <Cell fill="#f1f5f9" />
                 </Pie>
               </PieChart>
@@ -222,18 +197,19 @@ export function Dashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-8">
+          {/* COMPROMETIMENTO DE RENDA (Lendo commitmentRate do Java) */}
           <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h3 className="font-bold text-slate-800">Comprometimento de Renda</h3>
                 <p className="text-xs text-slate-500 italic">Peso das despesas essenciais sobre o ganho total</p>
               </div>
-              <span className={`text-sm font-bold ${healthMetrics.commitment > 50 ? 'text-amber-500' : 'text-emerald-600'}`}>
-                {healthMetrics.commitment.toFixed(1)}%
+              <span className={`text-sm font-bold ${healthMetrics.commitmentRate > 50 ? 'text-amber-500' : 'text-emerald-600'}`}>
+                {healthMetrics.commitmentRate.toFixed(1)}%
               </span>
             </div>
             <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
-              <div className={`h-full transition-all duration-1000 ${healthMetrics.commitment > 50 ? 'bg-amber-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(100, healthMetrics.commitment)}%` }} />
+              <div className={`h-full transition-all duration-1000 ${healthMetrics.commitmentRate > 50 ? 'bg-amber-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(100, healthMetrics.commitmentRate)}%` }} />
             </div>
             <div className="flex justify-between mt-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
               <span>0% (Ideal)</span>
@@ -307,12 +283,12 @@ export function Dashboard() {
               <Zap size={16} className="text-amber-500" /> Insights do MyFinn
             </h3>
             <div className="space-y-4">
-              {healthMetrics.retention >= 10 ? (
+              {healthMetrics.retentionRate >= 10 ? (
                 <p className="text-xs text-slate-600 leading-relaxed">🌟 **Excelente!** Você está retendo mais de 10% da sua renda.</p>
               ) : (
                 <p className="text-xs text-slate-600 leading-relaxed">⚠️ **Atenção:** Sua taxa de retenção está abaixo de 10%.</p>
               )}
-              {healthMetrics.commitment > 50 && (
+              {healthMetrics.commitmentRate > 50 && (
                 <p className="text-xs text-slate-600 leading-relaxed border-t border-slate-50 pt-4">🏠 Suas contas fixas estão pesando muito no orçamento.</p>
               )}
             </div>
