@@ -35,4 +35,16 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
             @Param("startDate") LocalDateTime startDate,
             @Param("endDate") LocalDateTime endDate
     );
+    // 👇 NOVA QUERY: Soma apenas despesas (outcome) onde a categoria é isFixed = true
+    @Query("SELECT COALESCE(SUM(t.valueCents), 0) FROM Transaction t " +
+            "WHERE t.user.id = :userId " +
+            "AND t.type = 'outcome' " +
+            "AND t.category.isFixed = true " + // A mágica do Épico 1 funcionando aqui!
+            "AND t.active = true " +
+            "AND t.date BETWEEN :startDate AND :endDate")
+    Long sumFixedExpensesByDateBetween(
+            @Param("userId") UUID userId,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate
+    );
 }

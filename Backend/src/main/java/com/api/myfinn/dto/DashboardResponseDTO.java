@@ -8,5 +8,6 @@ public record DashboardResponseDTO(
         Integer balanceCents,
         Integer previousMonthIncomeCents,
         Integer previousMonthOutcomeCents,
-        Page<TransactionResponseDTO> transactions // O Spring Boot cuida de empacotar as páginas!
+        HealthMetricsDTO healthMetrics, // 👇 NOVO CAMPO INJETADO AQUI
+        Page<TransactionResponseDTO> transactions
 ) {}
