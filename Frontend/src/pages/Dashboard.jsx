@@ -10,17 +10,17 @@ import {
   Activity, Zap
 } from 'lucide-react';
 
-/**
- * Dashboard Component: Centraliza os indicadores de saúde financeira.
- * Implementa Taxa de Retenção, Burn Rate, MoM e Comprometimento de Renda.
- */
 export function Dashboard() {
   const [transactions, setTransactions] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [summary, setSummary] = useState({ income: 0, outcome: 0, balance: 0 });
-  const [prevMonthSummary, setPrevMonthSummary] = useState({ income: 0, outcome: 0 });
-  const [isLoading, setIsLoading] = useState(true);
   
+  // 1. ESTADO ATUALIZADO: Agora recebe os dados do mês anterior diretamente
+  const [summary, setSummary] = useState({ 
+    income: 0, outcome: 0, balance: 0,
+    prevIncome: 0, prevOutcome: 0 
+  });
+  
+  const [isLoading, setIsLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth() + 1);
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [searchQuery, setSearchQuery] = useState('');
@@ -38,31 +38,24 @@ export function Dashboard() {
     fetchData();
   }, [currentMonth, currentYear]);
 
-  /**
-   * Busca dados do mês atual e do mês anterior para comparativos.
-   */
   async function fetchData() {
     setIsLoading(true);
     try {
-      const prevMonth = currentMonth === 1 ? 12 : currentMonth - 1;
-      const prevYear = currentMonth === 1 ? currentYear - 1 : currentYear;
-
-      const [transRes, catRes, prevRes] = await Promise.all([
+      // 2. FIM DO OVER-FETCHING: Apenas uma requisição para transações!
+      const [transRes, catRes] = await Promise.all([
         api.get(`/transactions/dashboard?month=${currentMonth}&year=${currentYear}`),
-        api.get('/categories'),
-        api.get(`/transactions/dashboard?month=${prevMonth}&year=${prevYear}`)
+        api.get('/categories')
       ]);
       
       setSummary({
         income: transRes.data.incomeCents,
         outcome: transRes.data.outcomeCents,
-        balance: transRes.data.balanceCents
+        balance: transRes.data.balanceCents,
+        prevIncome: transRes.data.previousMonthIncomeCents,   // Novo do Backend!
+        prevOutcome: transRes.data.previousMonthOutcomeCents  // Novo do Backend!
       });
-      setPrevMonthSummary({
-        income: prevRes.data.incomeCents,
-        outcome: prevRes.data.outcomeCents
-      });
-      setTransactions(transRes.data.transactions.content);
+      
+      setTransactions(transRes.data.transactions.content || transRes.data.transactions);
       setCategories(catRes.data);
     } catch (error) {
       if (error.response?.status === 403) navigate('/login');
@@ -71,19 +64,17 @@ export function Dashboard() {
     }
   }
 
-  // Envia os dados para a API (convertendo para centavos)
   async function handleCreateTransaction(e) {
     e.preventDefault();
     try {
       const payload = {
         ...newTx,
-        date: newTx.date + "T12:00:00", // Formatar para LocalDateTime
+        date: newTx.date + "T12:00:00",
         valueCents: Math.round(parseFloat(newTx.valueCents.replace(',', '.')) * 100)
       };
       await api.post('/transactions', payload);
       setIsModalOpen(false);
       
-      // Reseta o formulário
       setNewTx({
         description: '', valueCents: '', type: 'outcome', 
         date: new Date().toISOString().split('T')[0], 
@@ -96,34 +87,43 @@ export function Dashboard() {
   }
 
   // --- CÁLCULOS DE SAÚDE FINANCEIRA ---
-
   const healthMetrics = useMemo(() => {
     const today = new Date();
     const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
     const daysElapsed = currentMonth === today.getMonth() + 1 ? today.getDate() : daysInMonth;
 
-    // 1. Taxa de Retenção (A Regra de Ouro)
     const retention = summary.income > 0 
       ? Math.max(0, ((summary.income - summary.outcome) / summary.income) * 100) 
       : 0;
 
-    // 2. Ritmo de Gasto Diário (Burn Rate)
     const burnRate = summary.outcome / daysElapsed;
 
-    // 3. Comparativo MoM (%)
     const calculateMoM = (current, prev) => {
-      if (prev === 0) return 0;
+      if (!prev || prev === 0) return 0;
       return ((current - prev) / prev) * 100;
     };
 
-    // 4. Comprometimento (Ex: Categorias fixas como Moradia, Luz)
+    // 3. FIM DA GAMBIARRA DO REGEX: Agora usamos a propriedade isFixed da Categoria!
     const fixedExpenses = transactions
-      .filter(t => t.type === 'outcome' && /moradia|aluguel|luz|água|internet/i.test(t.categoryName))
+      .filter(t => t.type === 'outcome')
+      .filter(t => {
+        // Encontra a categoria desta transação e verifica se ela é essencial
+        const cat = categories.find(c => c.id === t.categoryId || c.name === t.categoryName);
+        return cat?.isFixed === true;
+      })
       .reduce((acc, t) => acc + t.valueCents, 0);
+      
     const commitment = summary.income > 0 ? (fixedExpenses / summary.income) * 100 : 0;
 
-    return { retention, burnRate, incomeMoM: calculateMoM(summary.income, prevMonthSummary.income), outcomeMoM: calculateMoM(summary.outcome, prevMonthSummary.outcome), commitment };
-  }, [summary, prevMonthSummary, transactions, currentMonth, currentYear]);
+    return { 
+      retention, 
+      burnRate, 
+      // 4. MoM LENDO DIRETO DO SUMMARY OTIMIZADO
+      incomeMoM: calculateMoM(summary.income, summary.prevIncome), 
+      outcomeMoM: calculateMoM(summary.outcome, summary.prevOutcome), 
+      commitment 
+    };
+  }, [summary, transactions, categories, currentMonth, currentYear]);
 
   // --- CÁLCULO DE CATEGORIAS PARA O GRÁFICO ---
   const expensesByCategory = useMemo(() => {
@@ -152,7 +152,6 @@ export function Dashboard() {
 
   return (
     <>
-      {/* CABEÇALHO PADRONIZADO */}
       <header className="flex flex-col lg:flex-row justify-between items-start lg:items-end mb-8 gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Painel de Saúde</h1>
@@ -173,10 +172,7 @@ export function Dashboard() {
         </div>
       </header>
 
-      {/* GRID DE INDICADORES PRINCIPAIS */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        
-        {/* Entradas com MoM */}
         <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
           <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Entradas</p>
           <h3 className="text-2xl font-bold text-slate-800">{formatCurrency(summary.income)}</h3>
@@ -186,7 +182,6 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* Saídas com MoM */}
         <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
           <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Saídas</p>
           <h3 className="text-2xl font-bold text-slate-800">{formatCurrency(summary.outcome)}</h3>
@@ -196,7 +191,6 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* Burn Rate Diário */}
         <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm relative overflow-hidden">
           <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Ritmo de Gasto</p>
           <h3 className="text-2xl font-bold text-slate-800">{formatCurrency(healthMetrics.burnRate)}<span className="text-xs font-medium text-slate-400"> /dia</span></h3>
@@ -206,7 +200,6 @@ export function Dashboard() {
           </p>
         </div>
 
-        {/* Taxa de Retenção (A Regra de Ouro) */}
         <div className={`bg-white p-6 rounded-3xl border-2 shadow-sm flex items-center justify-between ${healthMetrics.retention >= 10 ? 'border-emerald-100 bg-emerald-50/10' : 'border-rose-100 bg-rose-50/10'}`}>
           <div>
             <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Retenção</p>
@@ -217,10 +210,7 @@ export function Dashboard() {
           <div className="w-12 h-12">
             <ResponsiveContainer>
               <PieChart>
-                <Pie 
-                  data={[{v: healthMetrics.retention}, {v: 100 - healthMetrics.retention}]} 
-                  innerRadius={15} outerRadius={22} stroke="none" dataKey="v" startAngle={90} endAngle={-270}
-                >
+                <Pie data={[{v: healthMetrics.retention}, {v: 100 - healthMetrics.retention}]} innerRadius={15} outerRadius={22} stroke="none" dataKey="v" startAngle={90} endAngle={-270}>
                   <Cell fill={healthMetrics.retention >= 10 ? '#10b981' : '#f43f5e'} />
                   <Cell fill="#f1f5f9" />
                 </Pie>
@@ -231,9 +221,7 @@ export function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* LADO ESQUERDO: Layout Principal */}
         <div className="lg:col-span-2 space-y-8">
-          {/* Gráfico de Comprometimento de Renda */}
           <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
             <div className="flex justify-between items-center mb-6">
               <div>
@@ -245,10 +233,7 @@ export function Dashboard() {
               </span>
             </div>
             <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
-              <div 
-                className={`h-full transition-all duration-1000 ${healthMetrics.commitment > 50 ? 'bg-amber-500' : 'bg-blue-500'}`}
-                style={{ width: `${Math.min(100, healthMetrics.commitment)}%` }}
-              />
+              <div className={`h-full transition-all duration-1000 ${healthMetrics.commitment > 50 ? 'bg-amber-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(100, healthMetrics.commitment)}%` }} />
             </div>
             <div className="flex justify-between mt-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
               <span>0% (Ideal)</span>
@@ -257,7 +242,6 @@ export function Dashboard() {
             </div>
           </div>
 
-          {/* Listagem de Transações Simplificada */}
           <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
             <div className="p-6 border-b border-slate-50 flex justify-between items-center">
               <h3 className="font-bold text-slate-800">Últimos Lançamentos</h3>
@@ -284,10 +268,7 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* LADO DIREITO: Gráficos e Insights (A área circulada) */}
         <div className="space-y-6">
-          
-          {/* Distribuição por Categoria */}
           <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
             <h3 className="font-bold text-slate-800 mb-6 text-sm">Distribuição de Gastos</h3>
             {expensesByCategory.length > 0 ? (
@@ -321,33 +302,24 @@ export function Dashboard() {
             )}
           </div>
 
-          {/* Insights Inteligentes */}
           <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
             <h3 className="font-bold text-slate-800 mb-6 text-sm flex items-center gap-2">
               <Zap size={16} className="text-amber-500" /> Insights do MyFinn
             </h3>
             <div className="space-y-4">
               {healthMetrics.retention >= 10 ? (
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  🌟 **Excelente!** Você está retendo mais de 10% da sua renda. Este é o caminho para a liberdade financeira.
-                </p>
+                <p className="text-xs text-slate-600 leading-relaxed">🌟 **Excelente!** Você está retendo mais de 10% da sua renda.</p>
               ) : (
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  ⚠️ **Atenção:** Sua taxa de retenção está abaixo de 10%. Tente reduzir gastos variáveis para "pagar a si mesmo" primeiro.
-                </p>
+                <p className="text-xs text-slate-600 leading-relaxed">⚠️ **Atenção:** Sua taxa de retenção está abaixo de 10%.</p>
               )}
               {healthMetrics.commitment > 50 && (
-                <p className="text-xs text-slate-600 leading-relaxed border-t border-slate-50 pt-4">
-                  🏠 Suas contas fixas estão pesando muito no orçamento. Considere renegociar contratos ou reduzir custos recorrentes.
-                </p>
+                <p className="text-xs text-slate-600 leading-relaxed border-t border-slate-50 pt-4">🏠 Suas contas fixas estão pesando muito no orçamento.</p>
               )}
             </div>
           </div>
-
         </div>
       </div>
 
-      {/* MODAL NOVA TRANSAÇÃO */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl relative border border-slate-100">
