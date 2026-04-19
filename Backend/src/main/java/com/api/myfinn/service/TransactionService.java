@@ -7,6 +7,7 @@ import com.api.myfinn.dto.TransactionResponseDTO;
 import com.api.myfinn.model.Category;
 import com.api.myfinn.model.Transaction;
 import com.api.myfinn.model.User;
+import org.springframework.data.domain.Sort;
 import com.api.myfinn.repository.CategoryRepository;
 import com.api.myfinn.repository.TransactionRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -101,6 +102,24 @@ public class TransactionService {
                 metrics, // 👇 Passando as métricas para a resposta
                 transactionsPage
         );
+    }
+
+    // ==========================================
+    // EXTRATO MESTRE (COM FILTROS E PAGINAÇÃO)
+    // ==========================================
+    public Page<TransactionResponseDTO> getTransactionsHistory(
+            UUID categoryId, String type, String search, int page, int size, User loggedUser) {
+
+        // Configura a paginação ordenando da data mais recente para a mais antiga
+        Pageable pageable = PageRequest.of(page, size, org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "date"));
+
+        return transactionRepository.findTransactionsWithFilters(
+                loggedUser.getId(),
+                type,
+                categoryId,
+                search,
+                pageable
+        ).map(this::convertToResponseDTO);
     }
 
     // ==========================================

@@ -23,3 +23,11 @@
 - **Base URL:** `/api` (ou conforme configurado no application.properties).
 - **Autenticação:** Header `Authorization: Bearer <token>`.
 - **Tratamento de Erros:** Padronizado via `GlobalExceptionHandler` retornando o DTO `StandardErrorDTO`.
+
+## 5. Padrões de Observabilidade (Logs)
+- **Framework de Log:** Utilização obrigatória de SLF4J através da anotação `@Slf4j` do Lombok.
+- **Proibição de Prints:** É terminantemente proibido o uso de `System.out.println()` para rastreio de dados ou erros.
+- **Níveis de Log:** - `INFO`: Para registrar o início/fim de processos importantes (ex: criação de transação, login).
+  - `WARN`: Para situações inesperadas que não interrompem o sistema (ex: tentativa de acesso negado).
+  - `ERROR`: Para capturar exceções, obrigatoriamente incluindo a StackTrace do erro.
+- **Formatação:** Mensagens devem ser claras e utilizar *placeholders* (`{}`) para variáveis, evitando a concatenação manual de strings.

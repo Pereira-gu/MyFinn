@@ -23,7 +23,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
 
     List<Transaction> findByUserIdAndActiveTrueAndIsRecurringTrueAndDateBetween(UUID userId, LocalDateTime startDate, LocalDateTime endDate);
 
-    // 👇 NOVA QUERY: Soma otimizada direto no banco de dados (Retorna Long por padrão do JPA)
+    // Soma otimizada direto no banco de dados
     @Query("SELECT COALESCE(SUM(t.valueCents), 0) FROM Transaction t " +
             "WHERE t.user.id = :userId " +
             "AND t.type = :type " +
@@ -35,16 +35,28 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
             @Param("startDate") LocalDateTime startDate,
             @Param("endDate") LocalDateTime endDate
     );
-    // 👇 NOVA QUERY: Soma apenas despesas (outcome) onde a categoria é isFixed = true
+    //Soma apenas despesas (outcome) onde a categoria é isFixed = true
     @Query("SELECT COALESCE(SUM(t.valueCents), 0) FROM Transaction t " +
             "WHERE t.user.id = :userId " +
             "AND t.type = 'outcome' " +
-            "AND t.category.isFixed = true " + // A mágica do Épico 1 funcionando aqui!
+            "AND t.category.isFixed = true " +
             "AND t.active = true " +
             "AND t.date BETWEEN :startDate AND :endDate")
     Long sumFixedExpensesByDateBetween(
             @Param("userId") UUID userId,
             @Param("startDate") LocalDateTime startDate,
             @Param("endDate") LocalDateTime endDate
+    );
+    //Busca Dinâmica (Blindada contra o erro "bytea" do PostgreSQL)
+    @Query("SELECT t FROM Transaction t WHERE t.user.id = :userId AND t.active = true " +
+            "AND (CAST(:type AS string) IS NULL OR t.type = :type) " +
+            "AND (CAST(:categoryId AS uuid) IS NULL OR t.category.id = :categoryId) " +
+            "AND (CAST(:search AS string) IS NULL OR LOWER(t.description) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%')))")
+    Page<Transaction> findTransactionsWithFilters(
+            @Param("userId") UUID userId,
+            @Param("type") String type,
+            @Param("categoryId") UUID categoryId,
+            @Param("search") String search,
+            Pageable pageable
     );
 }
